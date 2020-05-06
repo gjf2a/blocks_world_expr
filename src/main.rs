@@ -8,7 +8,15 @@ use std::io::Write;
 
 fn main() -> io::Result<()> {
     let mut results = anyhop::summary_csv_header();
-    for file in env::args().skip(1) {
+    let mut limit_ms = None;
+    let mut args_iter = env::args().skip(1).peekable();
+    while args_iter.peek().map_or(false, |s| s.starts_with("-")) {
+        match args_iter.next().unwrap().as_str() {
+            "-5s" => limit_ms = Some(5000),
+            tag => println!("Unrecognized argument: {}",tag)
+        }
+    }
+    for file in args_iter {
         if file.ends_with("*") {
             let mut no_star = file.clone();
             no_star.pop();
@@ -18,11 +26,11 @@ fn main() -> io::Result<()> {
                 let entry = entry.to_str();
                 let entry_name = entry.unwrap();
                 if entry_name.starts_with(no_star.as_str()) {
-                    assess_file(entry_name, &mut results)?;
+                    assess_file(entry_name, &mut results, limit_ms)?;
                 }
             }
         } else {
-            assess_file(file.as_str(), &mut results)?;
+            assess_file(file.as_str(), &mut results, limit_ms)?;
         }
     }
     let mut output = File::create("results.csv")?;
@@ -30,14 +38,23 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn assess_file(file: &str, results: &mut String) -> io::Result<()> {
+fn assess_file(file: &str, results: &mut String, limit_ms: Option<u128>) -> io::Result<()> {
     println!("Running {}", file);
     let (start, goal) = make_block_problem_from(file)?;
     for strategy in vec![Alternate(LeastRecent), Steady(LeastRecent), Steady(MostRecent)] {
-        let outcome = AnytimePlanner::plan(&start, &goal, None, strategy, &|p| p.len(), 1, true);
-        let row = outcome.summary_csv_row(format!("{}_{:?}", file, strategy).as_str());
-        print!("{}", row);
-        results.push_str(row.as_str());
+        for apply_cutoff in vec![true, false] {
+            let outcome = AnytimePlanner::plan(&start, &goal, limit_ms, strategy, &|p| p.len(), 1, apply_cutoff);
+            let label = format!("o_{}_{:?}_{}", desuffix(file), strategy, if apply_cutoff {"cutoff"} else {"no_cutoff"}).replace(")", "_").replace("(", "_");
+            let row = outcome.summary_csv_row(label.as_str());
+            print!("{}", row);
+            results.push_str(row.as_str());
+            let mut output = File::create(format!("{}.csv", label))?;
+            write!(output, "{}", outcome.instance_csv())?;
+        }
     }
     Ok(())
+}
+
+pub fn desuffix(filename: &str) -> String {
+    filename.split(".").next().unwrap().to_string()
 }
