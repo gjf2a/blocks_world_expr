@@ -9,3 +9,5 @@ edition = "2018"
 [dependencies]
 anyhop = {git = "https://github.com/gjf2a/anyhop"}
 blocks_world = {git = "https://github.com/gjf2a/blocks_world"}
+simple_logger = "1.6.0"
+log = "0.4.11"
